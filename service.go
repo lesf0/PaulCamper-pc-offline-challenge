@@ -11,12 +11,13 @@ func NewService() *Service {
 	t := newRandomTranslator(
 		100*time.Millisecond,
 		500*time.Millisecond,
-		0.9,
+		0.8,
 	)
 
 	w := newTranslatorWrapper(
 		t,
 		4,
+		10*time.Minute,
 	)
 
 	return &Service{
