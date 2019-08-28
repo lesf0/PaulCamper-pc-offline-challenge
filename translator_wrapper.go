@@ -8,6 +8,7 @@ import (
 	"math"
 	"errors"
 	"fmt"
+	"sync"
 )
 
 type translatorWrapperCacheEntry struct {
@@ -20,6 +21,8 @@ type translatorWrapperCacheEntry struct {
 type translatorWrapper struct {
 	translator Translator
 	max_attempts int
+	lock_locks sync.Mutex
+	locks map[string]*sync.Mutex
 	cache map[string]translatorWrapperCacheEntry
 	cache_lifetime time.Duration
 }
@@ -27,9 +30,21 @@ type translatorWrapper struct {
 //	Attempting `max_attempts` retries before giving up.
 //	Delay between retries is 10 times bigger every time.
 //	Results are cached for `cache_lifetime`.
+//	Same subsequent queries are locked until the first one is complete.
 func (t translatorWrapper) Translate(ctx context.Context, from, to language.Tag, data string) (string, error) {
 	//	TODO : better key
 	cache_key := fmt.Sprintf("%v#%v#%s", from, to, data);
+
+	t.lock_locks.Lock()
+	lock, ok := t.locks[cache_key];
+	if (!ok) {
+		lock = &sync.Mutex{}
+		t.locks[cache_key] = lock
+	}
+	t.lock_locks.Unlock()
+
+	lock.Lock()
+	defer lock.Unlock()
 
 	if val, ok := t.cache[cache_key]; ok {
 		if (time.Since(val.created_at) < t.cache_lifetime) {
@@ -62,5 +77,6 @@ func newTranslatorWrapper(t Translator, max_attempts int, lifetime time.Duration
 		max_attempts: max_attempts,
 		cache: map[string]translatorWrapperCacheEntry{},
 		cache_lifetime: lifetime,
+		locks: map[string]*sync.Mutex{},
 	}
 }
